@@ -1,0 +1,208 @@
+import type { Request, Response } from "express";
+import { _, AppError, Cog, Err, withSeperator, generateOtp, toHash, withoutSeperator } from "../../../lib/core";
+import { ErrorCode, OtpKind, UserStatus } from "../../../types/enums";
+import { pool } from "../../../db";
+import type { OtpsInsert, UsersRow } from "../../../db/schema";
+import { decrypt, encrypt } from "../../../lib/crypto";
+import { LANG, sendEmail, composeEmail } from "../../../lib/email";
+import { APP_URL } from "../../../config";
+
+
+// // POST /api/v1/auth/login
+// export const login = async (req: Request, res: Response) => {
+//     const { email, password } = req.body ?? {};
+
+//     if (!email || !password)
+//         return res.status(400).json({ ok: false, error: "email and password are required" });
+
+//     // TODO: verify credentials against db, issue session/token
+//     return res.status(200).json({ ok: true, email });
+// };
+
+const _makeSession = () => {}
+
+
+export const Verify = async (req: Request, resp: Response) => {
+    try{
+        const { token, otp } = req.body
+        
+        if ( _(token).isEmpty() ) {
+            throw new AppError(
+                ErrorCode.InvalidInput,
+                "Token is required!"
+            )
+        }
+
+
+        const [kind, mode, uid, otpId, code, _stamp] = withoutSeperator(decrypt(token))
+
+        if ( !kind || !mode || !uid || !otpId || !code || !_stamp ){
+            throw new AppError(
+                ErrorCode.InvalidInput,
+                "Token is invalid!"
+            )
+        }
+
+        if ( kind == OtpKind.Verify ){
+            if ( mode == `0` && otp != code ){
+                await db.Otps
+                    .where({ id: +otpId, })
+                    .update({ 
+                        attempts: { increment: 1 } })
+
+                throw new AppError(
+                    ErrorCode.InvalidInput,
+                    "OTP is invalid!"
+                )
+            }
+        }
+
+
+    }catch(err){
+        Err(resp, err)
+    }
+}
+
+const _sendVerificationToken = async(mail_settings: Record<string, unknown>, user: Pick<UsersRow, "id" | "nm" | "em">) => {
+    try{
+        // mode - 0 is otp mode - 1 is link
+        const { mode } = mail_settings
+        
+        let token : string | null = null;
+        let otp: string | null = null;
+        const expiry = new Date(Date.now() + (+mail_settings.mail_expiry_in_hours! * 60 * 60 * 1000));
+
+        if ( mode == 0 ){
+            otp = generateOtp();
+
+            const otpId = await pool.query<Pick<OtpsInsert, "id">>(
+                `INSERT INTO otps (uid, token, kind, expiry) VALUES ($1, $2, $3, $4) RETURNING id`,
+                [
+                    user.id,
+                    otp,
+                    "verify",
+                    expiry
+                ],
+            )
+
+            token = withSeperator(otpId.rows[0].id+ ``, otp)
+        }
+
+        const verifyToken = encrypt(withSeperator("verify", mode + ``, user.id, token || `__`, expiry.getTime()))
+        
+        sendEmail({
+            to: user.em!,
+            subject: LANG.emailVerificationSubject,
+            html: composeEmail(
+                LANG[ mode ? `emailVerificationEmailLink`: `emailVerificationEmailOtp` ],
+                user.nm!, 
+                // user.em!, 
+                mode ? `${APP_URL}u/verify/${verifyToken}`: otp!
+            )
+        })
+
+        if ( !mode ) return verifyToken;
+    }catch(err){
+        throw err;
+    }
+}
+
+export const Signup = async (req: Request, resp: Response) => {
+    try {
+        const { nm, em, psw } = req.body ?? {};
+        const e = em?.trim().toLowerCase();
+        const p = psw?.trim();
+
+        if ( !e || !_(e).isEmail() ){
+            throw new AppError(
+                ErrorCode.InvalidInput,
+                "Email address is invalid or undefined"
+            )
+        }
+
+        const exist = await pool.query<Pick<UsersRow, "id" | "nm" | "em" | "psw">>(
+            `SELECT 1 FROM users WHERE em = $1 AND status != $2 LIMIT 1`,
+            [e, UserStatus.Deleted],
+        );
+        
+
+        if ( exist.rows.length ){
+            throw new AppError(
+                ErrorCode.UserExists,
+                "An account with this email already exists",
+                409
+            )
+        }
+
+        const { passowrd_less, mail_settings } = await Cog();
+        const credentials: { psw?: string } = {};
+
+        if ( !+passowrd_less! ){
+            if ( !p ){
+                throw new AppError(
+                    ErrorCode.InvalidInput,
+                    "Password is required!"
+                )
+            }
+            credentials.psw = encrypt(p);
+        }
+
+        const n = nm?.trim() || e.split(`@`)[0];
+
+        const cols = ["nm", "em"];
+        const vals: unknown[] = [n, e];
+        if ( credentials.psw ){
+            cols.push("psw");
+            vals.push(credentials.psw);
+        }
+
+        const placeholders = vals.map((_v, i) => `$${i + 1}`).join(", ");
+
+        const created = await pool.query<Pick<UsersRow, "id">>(
+            `INSERT INTO users (${cols.join(", ")}) VALUES (${placeholders}) RETURNING id`,
+            vals,
+        );
+
+
+        const user = created.rows[0]!;
+
+        let token: string | undefined;
+
+        if ( mail_settings?.mail_verification ){
+            token = await _sendVerificationToken(
+                mail_settings,
+                { id: user.id, em: e, nm: n }
+            )
+
+        }
+        
+        // else{
+        //     _makeSession()
+        // }
+
+        resp.status(201).json({ 
+            message: "Goog job! Your account has been created.",
+            _next: mail_settings?.mode ?  `/u/welcome` : `/u/verify`,
+            token
+        });
+    } catch (err) {
+        Err(resp, err)
+    }
+}
+
+// POST /api/v1/auth/register
+// export const register = async (req: Request, res: Response) => {
+//     const { email, password } = req.body ?? {};
+
+//     if (!email || !password)
+//         return res.status(400).json({ ok: false, error: "email and password are required" });
+
+//     // TODO: create user in db
+//     return res.status(201).json({ ok: true, email });
+// };
+
+// // POST /api/v1/auth/logout
+// export const logout = async (_req: Request, res: Response) => {
+//     // TODO: clear session cookie / invalidate token
+//     return res.status(200).json({ ok: true });
+// };

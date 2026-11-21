@@ -1,0 +1,54 @@
+{
+  "name": "@zuack/pgtypes",
+  "version": "0.1.0",
+  "description": "Zero-runtime Postgres → TypeScript type generator. Introspects a live database and emits type-only declarations for use with the raw pg driver.",
+  "keywords": [
+    "postgres",
+    "postgresql",
+    "typescript",
+    "types",
+    "type-generator",
+    "codegen",
+    "pg",
+    "schema",
+    "introspection",
+    "zuack"
+  ],
+  "author": "Zuack",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "pgtypes": "dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "pg": "^8.11.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/pg": "^8.11.0",
+    "typescript": "^5.4.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

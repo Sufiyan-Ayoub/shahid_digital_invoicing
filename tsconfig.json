@@ -1,0 +1,41 @@
+{
+	"compilerOptions": {
+		/* Base Options */
+		"target": "ES2023",
+		"module": "preserve",
+		"moduleResolution": "bundler",
+		"lib": [
+			"ES2023"
+		],
+		/* Output Options */
+		"outDir": "./dist",
+		"rootDir": "./",
+		"sourceMap": true,
+		"removeComments": true,
+		/* Strictness & Safety */
+		"strict": true,
+		"noImplicitAny": true,
+		"strictNullChecks": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"forceConsistentCasingInFileNames": true,
+		/* Prisma & ESM Support */
+		"resolveJsonModule": true,
+		"allowImportingTsExtensions": false,
+		"moduleDetection": "force",
+		"types": [
+			"node"
+		]
+	},
+	"include": [
+		"prisma.config.ts",
+		"prisma/**/*.ts",
+		"src/**/*"
+	],
+	"exclude": [
+		"node_modules",
+		"dist",
+		"pubs",
+		"src/test/**"
+	]
+}
